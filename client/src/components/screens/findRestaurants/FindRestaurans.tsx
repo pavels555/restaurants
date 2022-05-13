@@ -3,8 +3,8 @@ import Grid from "@mui/material/Grid";
 import Chip from "@mui/material/Chip";
 import Autocomplete from "@mui/material/Autocomplete";
 import TextField from "@mui/material/TextField";
-import React, { useState } from "react";
-import { AllRestaurants } from "../restaurants/allRestaurants";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { AllRestaurants } from "../restaurants/AllRestaurants";
 import Switch from "@mui/material/Switch";
 import FormGroup from "@mui/material/FormGroup";
 import FormControlLabel from "@mui/material/FormControlLabel";
@@ -18,6 +18,7 @@ import MenuItem from "@mui/material/MenuItem";
 import Select, { SelectChangeEvent } from "@mui/material/Select";
 import TagFilters from "./TagFilters";
 import "./FindRestaurans.css";
+import { width } from "@mui/system";
 
 const tags = [
   "meat",
@@ -48,9 +49,79 @@ type Filters = {
 
 export const FindRestaurants = (props): JSX.Element => {
   const [filters, setFilters] = useState<Filters>({});
+  const [mouse, setMouse] = useState(null);
+  const restaurants = [];
+
+  const websocket = useRef<WebSocket>(null);
+
+  useEffect(() => {
+    // const ws = new WebSocket("ws://localhost:8081");
+
+    // ws.on("open", function open() {
+    //   ws.send("something");
+    // });
+
+    // ws.on("message", function message(data) {
+    //   console.log("received: %s", data);
+    // });
+
+    // return () => {
+    //   ws.close();
+    // };
+
+    websocket.current = new WebSocket("ws://localhost:8081");
+
+    const apiCall = {
+      event: "bts:subscribe",
+      data: { channel: "order_book_btcusd" },
+    };
+
+    websocket.current.onopen = () => {
+      console.log("connected");
+      // websocket.current.send(JSON.stringify(apiCall));
+    };
+
+    websocket.current.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      try {
+        console.log(data);
+
+        if ((data.event = "mousemove")) {
+          setMouse(data.data);
+        } else {
+          // if ((data.event = "data")) {
+          setFilters(data);
+          // setBids(data.data.bids.slice(0, 5));
+          // }
+        }
+      } catch (err) {
+        console.log(err);
+      }
+    };
+
+    return () => {
+      websocket.current.close();
+    };
+  }, [websocket, setFilters]);
+
+  const sendFiltersToServer = (f) => {
+    if (websocket.current.readyState === WebSocket.OPEN) {
+      websocket.current.send(JSON.stringify(f));
+    }
+  };
+
+  // useEffect(() => {
+  //   if (websocket.current.readyState === WebSocket.OPEN) {
+  //     websocket.current.send(JSON.stringify(filters));
+  //   }
+  // }, [filters]);
 
   const handleTagsChange = (value) => {
     setFilters({
+      ...filters,
+      tags: value,
+    });
+    sendFiltersToServer({
       ...filters,
       tags: value,
     });
@@ -61,6 +132,10 @@ export const FindRestaurants = (props): JSX.Element => {
       ...filters,
       day: event.target.value,
     });
+    sendFiltersToServer({
+      ...filters,
+      day: event.target.value,
+    });
   };
 
   const handleHourChange = (value) => {
@@ -68,82 +143,115 @@ export const FindRestaurants = (props): JSX.Element => {
       ...filters,
       hour: dayjs(value).format("HH:mm"),
     });
+    sendFiltersToServer({
+      ...filters,
+      hour: dayjs(value).format("HH:mm"),
+    });
   };
 
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (websocket.current.readyState === WebSocket.OPEN) {
+      console.log({ x: e.clientX, y: e.clientY });
+      websocket.current.send(
+        JSON.stringify({
+          event: "mousemove",
+          data: { x: e.clientX, y: e.clientY },
+        })
+      );
+    }
+  };
+  // return <>{bids}</>;
+
   return (
-    <Grid container spacing={2}>
-      <Grid item xs={2}>
-        <div
-          style={{
-            height: "100px",
-            border: "black",
-            borderWidth: "1px",
-            borderStyle: "dashed",
-          }}
-        >
-          Group Details
-        </div>
-        <div>
-          <FormControl component="fieldset">
-            <FormGroup aria-label="position" row>
-              <FormControlLabel
-                value="start"
-                control={<Switch color="primary" />}
-                label="Kosher"
-                labelPlacement="start"
-              />
-              <FormControlLabel
-                value="start"
-                control={<Switch color="primary" />}
-                label="Vegan"
-                labelPlacement="start"
-              />
-              <FormControlLabel
-                value="start"
-                control={<Switch color="primary" />}
-                label="Vegetarian"
-                labelPlacement="start"
-              />
-            </FormGroup>
-          </FormControl>
-          <TagFilters
-            tags={tags}
-            selectedTags={filters.tags}
-            onChange={handleTagsChange}
-          />
-        </div>
-        <LocalizationProvider
-          dateAdapter={AdapterDayjs}
-          style={{
-            display: "flex",
-            flexDirection: "row",
-          }}
-        >
-          <TimePicker
-            label="Hour"
-            value={filters.hour ? dayjs(`01-01-2000 ${filters.hour}`) : null}
-            onChange={handleHourChange}
-            renderInput={(params) => <TextField {...params} />}
-          />
-          <FormControl fullWidth>
-            <InputLabel id="demo-simple-select-label">Day</InputLabel>
-            <Select
-              labelId="demo-simple-select-label"
-              id="demo-simple-select"
-              value={filters.day || ""}
-              label="Day"
-              onChange={handleDayChange}
-            >
-              {[1,   2, 3, 4, 5, 6, 7].map((day) => (
-                <MenuItem value={day}>{day}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </LocalizationProvider>
+    <div onMouseMove={handleMouseMove}>
+      <Grid container spacing={2}>
+        <Grid item xs={2}>
+          <div
+            style={{
+              height: "100px",
+              border: "black",
+              borderWidth: "1px",
+              borderStyle: "dashed",
+            }}
+          >
+            Group Details
+          </div>
+          <div>
+            <FormControl component="fieldset">
+              <FormGroup aria-label="position" row>
+                <FormControlLabel
+                  value="start"
+                  control={<Switch color="primary" />}
+                  label="Kosher"
+                  labelPlacement="start"
+                />
+                <FormControlLabel
+                  value="start"
+                  control={<Switch color="primary" />}
+                  label="Vegan"
+                  labelPlacement="start"
+                />
+                <FormControlLabel
+                  value="start"
+                  control={<Switch color="primary" />}
+                  label="Vegetarian"
+                  labelPlacement="start"
+                />
+              </FormGroup>
+            </FormControl>
+            <TagFilters
+              tags={tags}
+              selectedTags={filters.tags}
+              onChange={handleTagsChange}
+            />
+          </div>
+          <LocalizationProvider
+            dateAdapter={AdapterDayjs}
+            style={{
+              display: "flex",
+              flexDirection: "row",
+            }}
+          >
+            <TimePicker
+              label="Hour"
+              value={filters.hour ? dayjs(`01-01-2000 ${filters.hour}`) : null}
+              onChange={handleHourChange}
+              renderInput={(params) => <TextField {...params} />}
+            />
+            <FormControl fullWidth>
+              <InputLabel id="demo-simple-select-label">Day</InputLabel>
+              <Select
+                labelId="demo-simple-select-label"
+                id="demo-simple-select"
+                value={filters.day || ""}
+                label="Day"
+                onChange={handleDayChange}
+              >
+                {[1, 2, 3, 4, 5, 6, 7].map((day) => (
+                  <MenuItem value={day}>{day}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </LocalizationProvider>
+        </Grid>
+        <Grid item xs={10}>
+          <AllRestaurants restaurants={restaurants} filters={filters} />
+        </Grid>
       </Grid>
-      <Grid item xs={10}>
-        <AllRestaurants filters={filters} />
-      </Grid>
-    </Grid>
+      <div
+        style={{
+          position: "fixed",
+          height: 10,
+          width: 10,
+          backgroundColor: "black",
+          ...(mouse
+            ? {
+                left: mouse.x,
+                top: mouse.y,
+              }
+            : {}),
+        }}
+      ></div>
+    </div>
   );
 };
