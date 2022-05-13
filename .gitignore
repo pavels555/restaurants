@@ -108,3 +108,6 @@ build/
 *.idea
 *.iml
 *.hot-update.[js|json]
+
+.npmrc
+package-lock.json
