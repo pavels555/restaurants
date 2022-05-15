@@ -1,10 +1,10 @@
 import express from "express";
 import * as bodyParser from 'body-parser';
 
-import {initLogger} from "./conf/Logger";
-import {withAuth} from './middlewares/auth'
-import {connectToDatabase} from './mongoose/DatabaseEndpoint';
-import {Group} from "./models/Group";
+import { initLogger } from "./conf/Logger";
+import { withAuth } from './middlewares/auth'
+import { connectToDatabase } from './mongoose/DatabaseEndpoint';
+import { Group } from "./models/Group";
 
 import BuildResourceRouter from './routers/ResourcesRouter';
 import LoginRouter from './routers/LoginRouter';
@@ -25,22 +25,61 @@ const httpServer = app.listen(process.env.PORT || 3000, () => {
 
 const io = new Server(httpServer);
 
+const groupsDataCache = new Map();
+
+const groupsUserSocketId = new Map();
+
 io.on('connection', (socket: any) => {
     console.log(socket.id);
-    socket.on('joinGroup', (groupId: string) => {
+    socket.on('joinGroup', (data: any) => {
+        const { user, groupId } = data;
         socket.join(groupId);
+
+        let group;
+
+        if (groupsDataCache.has(groupId)) {
+            group = groupsDataCache.get(groupId);
+            group.members = [...group.members, user];
+        } else {
+            group = {
+                id: groupId,
+                members: [user],
+                creator: user,
+                filters: {}
+            }
+        }
+
+        groupsUserSocketId.set(socket.id, { user, groupId })
+
+        io.to(groupId).emit('groupData', group)
+
         console.log("joined group: " + groupId);
     })
 
-    socket.on("groupUpdate", (data: Group) => {
-        socket.to(data.id).emit("updateClient", data);
-    });
 
-    // socket.on("groupFiltersChange", (data: Group) => {
-    //     socket.to(data.id).emit("groupFiltersChange", data.filters);
-    // });
+    socket.on('filtersUpdate', (data: Group) => {
+        const { id: groupId } = data;
+
+        groupsDataCache.set(groupId, data);
+        socket.broadcast.to(groupId).emit('groupData', data)
+
+    })
 
     socket.on('disconnect', () => {
+        if (groupsUserSocketId.has(socket.id)) {
+            const { user, groupId } = groupsUserSocketId.get(socket.id);
+
+            const group = groupsDataCache.get(groupId);
+            group.members.splice(group.members.indexOf(user), 1);
+
+            groupsUserSocketId.delete(socket.id);
+            io.to(groupId).emit('groupData', group)
+        }
+
+
+        // TODO
+        // maybe at this point do saving of group to DB
+
         console.log('disconnected');
     });
 
